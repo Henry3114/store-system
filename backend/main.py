@@ -1,54 +1,26 @@
 """
 小卖部销售管理系统 - 后端
-一个文件搞定：FastAPI + SQLite + 全部接口
+FastAPI + PostgreSQL/SQLite + JWT认证
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 from pydantic import BaseModel
-from sqlalchemy import Column, Float, Integer, Text, create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import Session
+
+from config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
+from database import engine, get_db
+from models import Base, User, Product, Sale
 
 # ============================================================
-# 数据库（SQLite，文件自动创建在当前目录）
+# 初始化
 # ============================================================
-engine = create_engine("sqlite:///./store.db", connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(bind=engine)
-Base = declarative_base()
-
-
-class Product(Base):
-    """商品表"""
-    __tablename__ = "products"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(Text, nullable=False)        # 商品名称
-    cost_price = Column(Float, nullable=False)  # 成本价
-    sell_price = Column(Float, nullable=False)  # 售价
-    stock = Column(Integer, default=0)          # 库存
-
-
-class Sale(Base):
-    """销售记录表"""
-    __tablename__ = "sales"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    product_id = Column(Integer, nullable=False)
-    product_name = Column(Text, nullable=False)   # 商品名称快照
-    quantity = Column(Integer, nullable=False)     # 销售数量
-    sell_price = Column(Float, nullable=False)     # 售价快照
-    cost_price = Column(Float, nullable=False)     # 成本价快照
-    profit = Column(Float, nullable=False)         # 这笔利润
-    created_at = Column(Text, default=lambda: datetime.now().isoformat())
-
-
-# 启动时自动建表
 Base.metadata.create_all(engine)
 
-# ============================================================
-# FastAPI
-# ============================================================
 app = FastAPI(title="小卖部销售管理系统")
 
 app.add_middleware(
@@ -58,10 +30,58 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+security = HTTPBearer()
+
+
+# ============================================================
+# 工具函数
+# ============================================================
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    return pwd_context.verify(password, hashed)
+
+
+def create_token(user_id: int) -> str:
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload = {"sub": str(user_id), "exp": expire}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+) -> User:
+    try:
+        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(401)
+        user = db.query(User).filter(User.id == int(user_id)).first()
+        if not user:
+            raise HTTPException(401)
+        return user
+    except JWTError:
+        raise HTTPException(401, "登录已过期，请重新登录")
+
 
 # ============================================================
 # 请求模型
 # ============================================================
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+    store_name: str = ""
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
 class ProductCreate(BaseModel):
     name: str
     cost_price: float
@@ -82,44 +102,83 @@ class SaleCreate(BaseModel):
 
 
 # ============================================================
-# 接口
+# 健康检查（无需登录）
 # ============================================================
-
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
 
 
-# --- 商品 CRUD ---
+# ============================================================
+# 认证接口（无需登录）
+# ============================================================
+@app.post("/api/auth/register")
+def register(req: RegisterRequest, db: Session = Depends(get_db)):
+    if len(req.username) < 2:
+        raise HTTPException(400, "用户名至少2个字符")
+    if len(req.password) < 4:
+        raise HTTPException(400, "密码至少4个字符")
+    if db.query(User).filter(User.username == req.username).first():
+        raise HTTPException(400, "用户名已被注册")
 
+    user = User(
+        username=req.username,
+        password_hash=hash_password(req.password),
+        store_name=req.store_name or req.username,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return {"token": create_token(user.id), "username": user.username}
+
+
+@app.post("/api/auth/login")
+def login(req: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == req.username).first()
+    if not user or not verify_password(req.password, user.password_hash):
+        raise HTTPException(400, "用户名或密码错误")
+    return {"token": create_token(user.id), "username": user.username}
+
+
+# ============================================================
+# 商品管理（需要登录）
+# ============================================================
 @app.get("/api/products")
-def get_products():
-    """商品列表"""
-    db = SessionLocal()
-    items = db.query(Product).all()
-    db.close()
-    return items
+def get_products(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return db.query(Product).filter(Product.user_id == user.id).all()
 
 
 @app.post("/api/products")
-def create_product(p: ProductCreate):
-    """新增商品"""
-    db = SessionLocal()
-    product = Product(name=p.name, cost_price=p.cost_price, sell_price=p.sell_price, stock=p.stock)
+def create_product(
+    p: ProductCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    product = Product(
+        user_id=user.id,
+        name=p.name,
+        cost_price=p.cost_price,
+        sell_price=p.sell_price,
+        stock=p.stock,
+    )
     db.add(product)
     db.commit()
     db.refresh(product)
-    db.close()
     return product
 
 
 @app.put("/api/products/{pid}")
-def update_product(pid: int, p: ProductUpdate):
-    """修改商品"""
-    db = SessionLocal()
-    product = db.query(Product).filter(Product.id == pid).first()
+def update_product(
+    pid: int,
+    p: ProductUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    product = db.query(Product).filter(Product.id == pid, Product.user_id == user.id).first()
     if not product:
-        db.close()
         raise HTTPException(404, "商品不存在")
     if p.name is not None:
         product.name = p.name
@@ -131,40 +190,41 @@ def update_product(pid: int, p: ProductUpdate):
         product.stock = p.stock
     db.commit()
     db.refresh(product)
-    db.close()
     return product
 
 
 @app.delete("/api/products/{pid}")
-def delete_product(pid: int):
-    """删除商品"""
-    db = SessionLocal()
-    product = db.query(Product).filter(Product.id == pid).first()
+def delete_product(
+    pid: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    product = db.query(Product).filter(Product.id == pid, Product.user_id == user.id).first()
     if not product:
-        db.close()
         raise HTTPException(404, "商品不存在")
     db.delete(product)
     db.commit()
-    db.close()
     return {"ok": True}
 
 
-# --- 销售 ---
-
+# ============================================================
+# 销售（需要登录）
+# ============================================================
 @app.post("/api/sales")
-def create_sale(s: SaleCreate):
-    """创建销售：扣库存 + 记录利润"""
-    db = SessionLocal()
-    product = db.query(Product).filter(Product.id == s.product_id).first()
+def create_sale(
+    s: SaleCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    product = db.query(Product).filter(Product.id == s.product_id, Product.user_id == user.id).first()
     if not product:
-        db.close()
         raise HTTPException(404, "商品不存在")
     if product.stock < s.quantity:
-        db.close()
         raise HTTPException(400, f"库存不足，当前库存 {product.stock}")
 
     profit = (product.sell_price - product.cost_price) * s.quantity
     sale = Sale(
+        user_id=user.id,
         product_id=product.id,
         product_name=product.name,
         quantity=s.quantity,
@@ -176,31 +236,33 @@ def create_sale(s: SaleCreate):
     db.add(sale)
     db.commit()
     db.refresh(sale)
-    db.close()
     return sale
 
 
 @app.get("/api/sales")
-def get_sales():
-    """销售记录（倒序）"""
-    db = SessionLocal()
-    items = db.query(Sale).order_by(Sale.id.desc()).all()
-    db.close()
-    return items
+def get_sales(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return db.query(Sale).filter(Sale.user_id == user.id).order_by(Sale.id.desc()).all()
 
 
-# --- 统计 ---
-
+# ============================================================
+# 统计（需要登录）
+# ============================================================
 @app.get("/api/stats")
-def get_stats():
-    """统计数据：今日 + 累计"""
-    db = SessionLocal()
+def get_stats(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     today_prefix = datetime.now().strftime("%Y-%m-%d")
+    today_sales = (
+        db.query(Sale)
+        .filter(Sale.user_id == user.id, Sale.created_at.like(f"{today_prefix}%"))
+        .all()
+    )
+    all_sales = db.query(Sale).filter(Sale.user_id == user.id).all()
 
-    today_sales = db.query(Sale).filter(Sale.created_at.like(f"{today_prefix}%")).all()
-    all_sales = db.query(Sale).all()
-
-    db.close()
     return {
         "today_revenue": sum(s.sell_price * s.quantity for s in today_sales),
         "today_profit": sum(s.profit for s in today_sales),

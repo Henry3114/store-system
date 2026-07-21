@@ -1,39 +1,32 @@
 # 小卖部销售管理系统
 
-一个简单易用的 Web 销售管理系统，专为小卖部、便利店老板设计。
+一个简单易用的本地销售管理 Demo。
 
 ## 功能
 
-- 用户注册登录
 - 商品管理（增删改查）
-- 销售订单（自动扣库存 + 利润计算）
-- 库存流水记录
-- 数据统计（销售额、利润、趋势图、热销排行）
+- 销售记录（自动扣库存 + 利润计算）
+- 销售统计（今日/累计销售额、利润）
 
 ## 技术栈
 
-| 层次 | 技术 |
-|------|------|
+| 层 | 技术 |
+|----|------|
 | 前端 | Vue3 + Vite + TypeScript + Element Plus |
 | 后端 | Python FastAPI + SQLAlchemy |
-| 数据库 | PostgreSQL (Supabase) |
-| 部署 | Vercel（前端）+ Render（后端） |
+| 数据库 | SQLite（零配置，文件自动创建） |
 
-## 本地开发
-
-### 环境要求
-
-- Python 3.11+
-- Node.js 18+
-- PostgreSQL（或使用 Supabase 远程数据库）
+## 本地运行
 
 ### 启动后端
 
 ```bash
 cd backend
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+uvicorn main:app --reload
 ```
+
+后端运行在 `http://localhost:8000`
 
 ### 启动前端
 
@@ -43,16 +36,12 @@ npm install
 npm run dev
 ```
 
-前端运行在 `http://localhost:5173`，自动代理 API 请求到后端 `http://localhost:8000`。
+前端运行在 `http://localhost:5173`，自动代理 API 请求到后端。
 
-## 项目状态
+### 使用
 
-🚧 MVP 开发中
-
-- [x] Phase 0-A: 项目初始化
-- [ ] Phase 0-B: Docker + CI/CD
-- [ ] Phase 1: 用户系统
-- [ ] Phase 2: 商品管理
-- [ ] Phase 3: 销售系统
-- [ ] Phase 4: 数据统计
-- [ ] Phase 5: 部署上线
+1. 打开浏览器访问 `http://localhost:5173`
+2. 在「商品管理」Tab 添加商品
+3. 在「销售」Tab 选择商品并卖出
+4. 在「销售记录」Tab 查看历史
+5. 在「统计」Tab 查看销售额和利润

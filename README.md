@@ -8,40 +8,62 @@
 - 销售记录（自动扣库存 + 利润计算）
 - 销售统计（今日/累计销售额、利润）
 
-## 技术栈
+---
 
-| 层 | 技术 |
-|----|------|
-| 前端 | Vue3 + Vite + TypeScript + Element Plus |
-| 后端 | Python FastAPI + SQLAlchemy |
-| 数据库 | SQLite（零配置，文件自动创建） |
+## 🚀 一键启动（推荐，非程序员用这个）
 
-## 本地运行
+我已经帮你做好了三个快捷方式，**就在你电脑桌面上**：
+
+| 文件 | 作用 |
+|------|------|
+| 🟢 **小卖部系统-一键启动.bat** | 双击它，自动启动前后端并打开浏览器 |
+| 🟢 小卖部系统-启动后端.bat | 只启动后端 |
+| 🟢 小卖部系统-启动前端.bat | 只启动前端 |
+
+### 第一次使用方法
+
+1. **双击桌面上的「小卖部系统-一键启动.bat」**
+2. 等 5 秒，会弹出两个黑色窗口（一个后端、一个前端）
+3. 再等 8 秒，浏览器会自动打开 `http://localhost:5173`
+4. 看到「小卖部销售管理系统」页面就成功了！
+
+### ⚠️ 重要
+
+- **不要关闭那两个黑色窗口** —— 关了服务就停了
+- 用完想退出，直接关掉两个黑色窗口就行
+
+---
+
+## 如果想用命令启动（开发者用）
+
+项目目录：`C:\Users\37171\WorkBuddy\2026-07-21-11-02-49\store-system\`
 
 ### 启动后端
 
 ```bash
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload
+cd "C:\Users\37171\WorkBuddy\2026-07-21-11-02-49\store-system\backend"
+C:\Users\37171\.workbuddy\binaries\python\envs\store-system\Scripts\python.exe -m uvicorn main:app --reload
 ```
 
-后端运行在 `http://localhost:8000`
-
-### 启动前端
+### 启动前端（新开一个 cmd 窗口）
 
 ```bash
-cd frontend
-npm install
+cd "C:\Users\37171\WorkBuddy\2026-07-21-11-02-49\store-system\frontend"
 npm run dev
 ```
 
-前端运行在 `http://localhost:5173`，自动代理 API 请求到后端。
+---
 
-### 使用
+## 使用流程
 
 1. 打开浏览器访问 `http://localhost:5173`
-2. 在「商品管理」Tab 添加商品
-3. 在「销售」Tab 选择商品并卖出
-4. 在「销售记录」Tab 查看历史
-5. 在「统计」Tab 查看销售额和利润
+2. 在「**商品管理**」Tab 添加商品（名称、成本价、售价、库存）
+3. 在「**销售**」Tab 选择商品、输入数量、点「卖出」
+4. 在「**销售记录**」Tab 查看所有销售历史
+5. 在「**统计**」Tab 查看今日/累计的销售额、利润
+
+## 技术栈
+
+- 前端：Vue3 + Vite + TypeScript + Element Plus
+- 后端：Python FastAPI + SQLAlchemy
+- 数据库：SQLite（自动建表，无需配置）

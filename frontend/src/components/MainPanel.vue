@@ -27,10 +27,14 @@ const username = localStorage.getItem('username') || ''
 // 方法
 // ============================================================
 async function loadAll() {
-  const [p, s, st] = await Promise.all([api.get('/products'), api.get('/sales'), api.get('/stats')])
-  products.value = p.data
-  sales.value = s.data
-  stats.value = st.data
+  try {
+    const [p, s, st] = await Promise.all([api.get('/products'), api.get('/sales'), api.get('/stats')])
+    products.value = p.data
+    sales.value = s.data
+    stats.value = st.data
+  } catch (err: any) {
+    ElMessage.error('加载数据失败：' + (err.response?.data?.detail || err.message || '网络错误'))
+  }
 }
 
 // --- 商品 ---
@@ -47,36 +51,57 @@ function openEdit(row: any) {
 }
 
 async function saveProduct() {
-  if (!form.value.name.trim()) return ElMessage.warning('请输入商品名称')
-  if (isEditing.value) {
-    await api.put(`/products/${form.value.id}`, form.value)
-    ElMessage.success('修改成功')
-  } else {
-    await api.post('/products', form.value)
-    ElMessage.success('添加成功')
+  if (!form.value.name || !form.value.name.trim()) {
+    ElMessage.warning('请输入商品名称')
+    return
   }
-  dialogVisible.value = false
-  await loadAll()
+  try {
+    if (isEditing.value) {
+      await api.put(`/products/${form.value.id}`, form.value)
+      ElMessage.success('修改成功')
+    } else {
+      await api.post('/products', form.value)
+      ElMessage.success('添加成功')
+    }
+    dialogVisible.value = false
+    await loadAll()
+  } catch (err: any) {
+    ElMessage.error((isEditing.value ? '修改' : '添加') + '失败：' + (err.response?.data?.detail || err.message || '网络错误'))
+  }
 }
 
 async function delProduct(row: any) {
-  await ElMessageBox.confirm(`确认删除「${row.name}」？`, '提示', { type: 'warning' })
-  await api.delete(`/products/${row.id}`)
-  ElMessage.success('删除成功')
-  await loadAll()
+  try {
+    await ElMessageBox.confirm(`确认删除「${row.name}」？`, '提示', { type: 'warning' })
+  } catch {
+    return // 用户取消
+  }
+  try {
+    await api.delete(`/products/${row.id}`)
+    ElMessage.success('删除成功')
+    await loadAll()
+  } catch (err: any) {
+    ElMessage.error('删除失败：' + (err.response?.data?.detail || err.message || '网络错误'))
+  }
 }
 
 // --- 销售 ---
 async function doSale() {
-  if (!saleForm.value.product_id) return ElMessage.warning('请选择商品')
-  if (saleForm.value.quantity < 1) return ElMessage.warning('数量至少为1')
+  if (!saleForm.value.product_id) {
+    ElMessage.warning('请选择商品')
+    return
+  }
+  if (saleForm.value.quantity < 1) {
+    ElMessage.warning('数量至少为1')
+    return
+  }
   try {
     await api.post('/sales', saleForm.value)
     ElMessage.success('销售成功！')
     saleForm.value = { product_id: null, quantity: 1 }
     await loadAll()
   } catch (err: any) {
-    ElMessage.error(err.response?.data?.detail || '销售失败')
+    ElMessage.error('销售失败：' + (err.response?.data?.detail || err.message || '网络错误'))
   }
 }
 
@@ -219,7 +244,7 @@ onMounted(loadAll)
 
     <!-- 商品编辑弹窗 -->
     <el-dialog v-model="dialogVisible" :title="isEditing ? '编辑商品' : '新增商品'" width="400px">
-      <el-form label-width="80px">
+      <el-form :model="form" label-width="80px">
         <el-form-item label="名称">
           <el-input v-model="form.name" placeholder="如：可口可乐" />
         </el-form-item>

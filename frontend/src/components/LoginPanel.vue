@@ -15,7 +15,7 @@ async function submit() {
   }
 
   try {
-    const url = isRegister.value ? '/api/auth/register' : '/api/auth/login'
+    const url = isRegister.value ? '/auth/register' : '/auth/login'
     const body = isRegister.value ? form.value : { username: form.value.username, password: form.value.password }
     const res = await api.post(url, body)
     localStorage.setItem('token', res.data.token)

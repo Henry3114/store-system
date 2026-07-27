@@ -101,6 +101,15 @@ class SaleCreate(BaseModel):
     quantity: int
 
 
+class BatchSaleItem(BaseModel):
+    product_id: int
+    quantity: int
+
+
+class BatchSaleCreate(BaseModel):
+    items: list[BatchSaleItem]
+
+
 # ============================================================
 # 健康检查（无需登录）
 # ============================================================
@@ -237,6 +246,45 @@ def create_sale(
     db.commit()
     db.refresh(sale)
     return sale
+
+
+@app.post("/api/sales/batch")
+def create_batch_sale(
+    batch: BatchSaleCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    results = []
+    total_profit = 0.0
+    for item in batch.items:
+        product = db.query(Product).filter(Product.id == item.product_id, Product.user_id == user.id).first()
+        if not product:
+            raise HTTPException(404, f"商品 {item.product_id} 不存在")
+        if product.stock < item.quantity:
+            raise HTTPException(400, f"「{product.name}」库存不足，当前库存 {product.stock}")
+
+        profit = (product.sell_price - product.cost_price) * item.quantity
+        total_profit += profit
+        sale = Sale(
+            user_id=user.id,
+            product_id=product.id,
+            product_name=product.name,
+            quantity=item.quantity,
+            sell_price=product.sell_price,
+            cost_price=product.cost_price,
+            profit=profit,
+        )
+        product.stock -= item.quantity
+        db.add(sale)
+        results.append({
+            "product_name": product.name,
+            "quantity": item.quantity,
+            "sell_price": product.sell_price,
+            "profit": round(profit, 2),
+        })
+
+    db.commit()
+    return {"items": results, "total_profit": round(total_profit, 2), "total_count": len(batch.items)}
 
 
 @app.get("/api/sales")
